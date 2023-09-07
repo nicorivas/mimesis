@@ -9,8 +9,9 @@ from pydantic import BaseModel
 
 class LLM(BaseModel):
 
-    API_KEY: str = "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"
+    API_KEY: str = "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"
     model: str = "gpt-3.5-turbo"
+    #model: str = "gpt-4"
     log: bool = True
 
     def chat(self, agent: Agent, prompt: str, system: Union[str, None]) -> str:
@@ -33,7 +34,5 @@ class LLM(BaseModel):
 
         if self.log:
             log_msg = f"""== prompt ==\n{prompt}\n==reply==\n{reply}"""
-            logging.error(log_msg)
-            print(log_msg)
 
         return reply

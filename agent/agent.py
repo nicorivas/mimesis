@@ -1,12 +1,12 @@
 from __future__ import annotations
 import json
 import logging
-from typing import Literal, Union
+from typing import Literal, Union, Iterable
 
 from pydantic import BaseModel
 
 from mimesis.personality.personality import Personality
-from mimesis.actions.actions import Action
+from mimesis.actions.actions import Action, Chain
 from mimesis.memory.memory import Memory
 from mimesis.thought import Thought
 from mimesis.model import LLM
@@ -46,20 +46,57 @@ class Agent(BaseModel):
             prompt += f"\n\n{action.do(self)}"
         return prompt
 
-    def do(self, action: Union[Action, None]) -> str:
-        prompt = self.prompt(action=action)
-        #print("prompt":prompt)
+    def do(self, action: Union[Chain, Action, None]) -> str:
+        """Execeutes an action
+        
+        Args:
+            actions (Union[list[Action], Action, None]): Action(s) to execute
 
-        if action is not None:
-            self.add_memory(Memory(description=action.memory(self)))
+        Returns:
+            replies (list[dict[str,str]]): List of replies
+        """
+        if isinstance(action, Chain):
+            # Chain of actions, redirect
+            return self.do_chain(action)
+        else:
+            # Single action
+            prompt = self.prompt(action=action)
+            if action is not None:
+                self.add_memory(Memory(description=action.memory))
+            reply = {}
+            text = self.llm.chat(self, prompt, self.definition)
+            reply["text"] = text
+            reply["type"] = action.reply.type
+            reply["name"] = action.reply.name
+            return [reply]
+    
+    def do_chain(self, chain: Chain):
+        replies = []
 
-        reply = self.llm.chat(self, prompt, self.definition)
+        for i in range(len(chain.actions)):
 
-        #thoughts = [thought.split(":")[1].strip() for thought in reply.split("\n")]
-        #for thought in thoughts:
-        #    self.add_memory(Thought(description=thought).memory)
+            # Get action, given replies so far
+            action = chain.get_action(i, replies[i-1] if len(replies) > 0 else None)
 
-        return reply
+            # Get prompt of action
+            prompt = self.prompt(action=action)
+
+            # Create memory of action
+            if action is not None:
+                self.add_memory(Memory(description=action.memory(self)))
+            
+            # Call the LLM and store reply
+            reply = {}
+            text = self.llm.chat(self, prompt, self.definition)
+            reply["text"] = text
+            reply["name"] = action.reply_name
+            reply["type"] = action.reply_type
+            
+            # Add reply to list of replies
+            replies.append(reply)
+
+        return replies
+
     
     def history_register(self, message: dict[str,str]):
         """Register a message in the agent's history"""
